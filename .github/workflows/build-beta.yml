@@ -1,0 +1,60 @@
+name: Build Beta Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      expiry_days:
+        description: "Trial length in days from today"
+        required: false
+        default: "14"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compute expiry date
+        id: expiry
+        shell: pwsh
+        run: |
+          $days = [int]"${{ github.event.inputs.expiry_days }}"
+          $date = (Get-Date).AddDays($days).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+          echo "VITE_BETA_EXPIRY=$date" >> $env:GITHUB_ENV
+
+      - name: Build Beta installer
+        env:
+          VITE_BETA_EXPIRY: ${{ env.VITE_BETA_EXPIRY }}
+        run: pnpm tauri:build:beta
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamieHUB-Beta-Installer
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 30
